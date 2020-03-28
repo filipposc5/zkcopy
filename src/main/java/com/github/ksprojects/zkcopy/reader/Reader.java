@@ -6,6 +6,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.log4j.Logger;
 
 /**
@@ -53,15 +54,17 @@ public final class Reader {
         ExecutorService pool = Executors.newFixedThreadPool(threadsNumber, threadFactory);
         AtomicInteger totalCounter = new AtomicInteger(0);
         AtomicInteger processedCounter = new AtomicInteger(0);
+        AtomicInteger failedCounter = new AtomicInteger(0);
+        AtomicLong bytesCounter = new AtomicLong(0);
         AtomicBoolean failed = new AtomicBoolean(false);
-        pool.execute(new NodeReader(pool, znode, totalCounter, processedCounter, failed));
+        pool.execute(new NodeReader(pool, znode, totalCounter, processedCounter, failedCounter, bytesCounter, failed));
         try {
             while (true) {
                 if (pool.awaitTermination(1, TimeUnit.SECONDS)) {
                     logger.info("Completed.");
                     break;
                 }
-                logger.info("Processing, total=" + totalCounter + ", processed=" + processedCounter);
+                logger.info("Processing, total=" + totalCounter + ", B=" + bytesCounter + ", failed=" + failedCounter + ", processed=" + processedCounter);
                 if (totalCounter.get() == processedCounter.get()) {
                     // all work finished
                     pool.shutdown();

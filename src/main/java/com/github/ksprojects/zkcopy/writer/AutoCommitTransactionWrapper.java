@@ -1,5 +1,7 @@
 package com.github.ksprojects.zkcopy.writer;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -18,6 +20,8 @@ class AutoCommitTransactionWrapper extends Transaction {
     int transactionSize;
     private int opsSinceCommit = 0;
     private ZooKeeper zk;
+    private Deque deque;
+
 
     /**
      *
@@ -32,10 +36,14 @@ class AutoCommitTransactionWrapper extends Transaction {
         transaction = zk.transaction();
         this.zk = zk;
         this.transactionSize = transactionSize;
+        this.deque = new ArrayDeque();
+
     }
 
     @Override
     public Transaction create(String path, byte[] data, List<ACL> acl, CreateMode createMode) {
+        
+        trackTrans(path, data);
         maybeCommitTransaction();
         return transaction.create(path, data, acl, createMode);
     }
@@ -54,7 +62,10 @@ class AutoCommitTransactionWrapper extends Transaction {
 
     @Override
     public Transaction setData(String path, byte[] data, int version) {
+
+        trackTrans(path, data);
         maybeCommitTransaction();
+	
         return transaction.setData(path, data, version);
     }
 
@@ -63,14 +74,29 @@ class AutoCommitTransactionWrapper extends Transaction {
         return transaction.commit();
     }
 
+    private void trackTrans(String path, byte[] data) {
+        int length = 0;
+        if (data != null) {
+           length = data.length;
+        }
+        deque.offer(new String(path + " " + String.valueOf(length)));
+    }
+
     private void maybeCommitTransaction() {
         if (opsSinceCommit >= (transactionSize - 1)) {
             try {
-                Writer.logger.info("Committing transaction");
+                if (transactionSize > 10) {
+                    Writer.logger.info("Committing transaction " + opsSinceCommit);
+                }
                 transaction.commit();
                 opsSinceCommit = 0;
+                deque.clear();
                 transaction = zk.transaction();
             } catch (InterruptedException | KeeperException e) {
+                for (Object object : deque) {
+                    String element = (String) object;
+                    Writer.logger.info("Trouble with: " + element);
+                }
                 throw new RuntimeException(e);
             }
         } else {
